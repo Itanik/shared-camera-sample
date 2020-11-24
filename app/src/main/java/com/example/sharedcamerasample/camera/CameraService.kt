@@ -2,13 +2,11 @@ package com.example.sharedcamerasample.camera
 
 import android.annotation.SuppressLint
 import android.graphics.ImageFormat
-import android.hardware.camera2.CameraAccessException
-import android.hardware.camera2.CameraCaptureSession
-import android.hardware.camera2.CameraDevice
-import android.hardware.camera2.CameraManager
+import android.hardware.camera2.*
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
+import android.util.Size
 import android.view.SurfaceHolder
 import com.example.sharedcamerasample.presentation.AutoFitSurfaceView
 import timber.log.Timber
@@ -19,17 +17,25 @@ class CameraService(
     private val cameraManager: CameraManager,
     private val cameraPreview: AutoFitSurfaceView
 ) {
+
+    companion object {
+        // Maximum number of images that will be held in the reader's buffer
+        private const val IMAGE_BUFFER_SIZE: Int = 1
+    }
     private val cameraId: String = cameraManager.backCameraId
     private var cameraDevice: CameraDevice? = null
     private var backgroundHandler: Handler? = null
     private var backgroundThread: HandlerThread? = null
     private lateinit var captureSession: CameraCaptureSession
     private val imageReader: ImageReader by lazy {
+        val size = characteristics.getTargetSize(Size(1920,1080))
+        Timber.d("imageReader final size = $size")
+
         ImageReader.newInstance(
-            1080,
-            1920,
+            size.width,
+            size.height,
             ImageFormat.JPEG,
-            1
+            IMAGE_BUFFER_SIZE
         ).apply {
             setOnImageAvailableListener({ reader ->
                 backgroundHandler?.post(ImageSaver(reader.acquireNextImage(), imageFile))
@@ -37,24 +43,13 @@ class CameraService(
             }, backgroundHandler)
         }
     }
+    private val characteristics: CameraCharacteristics by lazy {
+        cameraManager.getCameraCharacteristics(cameraId)
+    }
+
     var onImageTaken: (File) -> Unit = {}
     private lateinit var imageFile: File
 
-    private val cameraStateCallback = object : CameraDevice.StateCallback() {
-        override fun onOpened(camera: CameraDevice) {
-            cameraDevice = camera
-            createCameraPreviewSession()
-        }
-
-        override fun onDisconnected(camera: CameraDevice) {
-            closeCamera()
-        }
-
-        override fun onError(camera: CameraDevice, error: Int) {
-            Timber.e("cameraStateCallback.onError errorCode = $error")
-        }
-
-    }
 
     private fun createCameraPreviewSession() {
         val previewSurface = cameraPreview.holder.surface
@@ -92,7 +87,21 @@ class CameraService(
     fun openCamera() {
         startBackgroundThread()
         try {
-            cameraManager.openCamera(cameraId, cameraStateCallback, backgroundHandler)
+            cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+                override fun onOpened(camera: CameraDevice) {
+                    cameraDevice = camera
+                    createCameraPreviewSession()
+                }
+
+                override fun onDisconnected(camera: CameraDevice) {
+                    closeCamera()
+                }
+
+                override fun onError(camera: CameraDevice, error: Int) {
+                    Timber.e("cameraStateCallback.onError errorCode = $error")
+                }
+
+            }, backgroundHandler)
         } catch (e: CameraAccessException) {
             Timber.e(e)
         }
@@ -165,6 +174,8 @@ class CameraService(
                     cameraManager.getCameraCharacteristics(cameraId),
                     SurfaceHolder::class.java
                 )
+                Timber.d( "View finder size: ${cameraPreview.width} x ${cameraPreview.height}")
+                Timber.d( "Selected preview size: $previewSize")
                 cameraPreview.setAspectRatio(previewSize.width, previewSize.height)
 
                 openCamera()

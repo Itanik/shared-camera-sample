@@ -3,11 +3,12 @@ package com.example.sharedcamerasample.presentation
 import android.content.Context
 import android.util.AttributeSet
 import android.view.SurfaceView
-import android.view.TextureView
+import timber.log.Timber
 import kotlin.math.roundToInt
 
 /**
- * A [TextureView] that can be adjusted to a specified aspect ratio.
+ * A [SurfaceView] that can be adjusted to a specified aspect ratio and
+ * performs center-crop transformation of input frames.
  */
 class AutoFitSurfaceView @JvmOverloads constructor(
     context: Context,
@@ -27,6 +28,7 @@ class AutoFitSurfaceView @JvmOverloads constructor(
     fun setAspectRatio(width: Int, height: Int) {
         require(width > 0 && height > 0) { "Size cannot be negative" }
         aspectRatio = width.toFloat() / height.toFloat()
+        Timber.d("aspectRatio = $aspectRatio")
         holder.setFixedSize(width, height)
         requestLayout()
     }
@@ -50,6 +52,7 @@ class AutoFitSurfaceView @JvmOverloads constructor(
                 newWidth = width
                 newHeight = (width / actualRatio).roundToInt()
             }
+            Timber.d( "Measured dimensions set: $newWidth x $newHeight")
             setMeasuredDimension(newWidth, newHeight)
         }
     }

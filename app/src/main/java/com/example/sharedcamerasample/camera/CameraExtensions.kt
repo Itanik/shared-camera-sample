@@ -1,5 +1,6 @@
 package com.example.sharedcamerasample.camera
 
+import android.graphics.ImageFormat
 import android.graphics.Point
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
@@ -73,3 +74,30 @@ val CameraManager.backCameraId: String
         if (cameraId.isEmpty()) cameraId = cameraIdList[0]
         return cameraId
     }
+
+fun CameraCharacteristics.getTargetSize(target: Size): Size {
+    val targetRatioRange =
+        target.width.toFloat() / target.height.toFloat() - 0.1f..
+        target.width.toFloat() / target.height.toFloat() + 0.1f
+
+    val sizes = get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!
+        .getOutputSizes(ImageFormat.JPEG)
+    val horizontalOriented = sizes.none { (it.height.toFloat() / it.width.toFloat()) > 1 }
+    val wideSizes = sizes.filter {
+        val ratio = if (horizontalOriented)
+            it.width.toFloat() / it.height.toFloat()
+        else
+            it.height.toFloat() / it.width.toFloat()
+        ratio in targetRatioRange
+    }
+    val finalTarget = wideSizes.filter {
+        if (horizontalOriented)
+            it.height == target.height && it.width == target.width
+        else
+            it.height == target.width && it.width == target.height
+    }
+    return if (finalTarget.isNotEmpty())
+        finalTarget[0]
+    else
+        sizes.maxByOrNull { it.width * it.height } ?: sizes[0]
+}
