@@ -1,4 +1,4 @@
-package com.example.sharedcamerasample
+package com.example.sharedcamerasample.camera
 
 import android.media.Image
 import java.io.File

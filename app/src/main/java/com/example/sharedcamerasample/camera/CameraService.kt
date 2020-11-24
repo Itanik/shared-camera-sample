@@ -1,4 +1,4 @@
-package com.example.sharedcamerasample
+package com.example.sharedcamerasample.camera
 
 import android.annotation.SuppressLint
 import android.graphics.ImageFormat
@@ -10,6 +10,7 @@ import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
 import android.view.SurfaceHolder
+import com.example.sharedcamerasample.presentation.AutoFitSurfaceView
 import timber.log.Timber
 import java.io.File
 

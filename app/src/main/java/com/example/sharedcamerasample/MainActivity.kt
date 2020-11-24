@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.example.sharedcamerasample.presentation.SharedCameraFragment
 import kotlinx.android.synthetic.main.activity_main.*
 import timber.log.Timber
 

@@ -1,4 +1,4 @@
-package com.example.sharedcamerasample
+package com.example.sharedcamerasample.presentation
 
 import android.Manifest
 import android.content.Context
@@ -8,6 +8,7 @@ import android.os.Environment
 import android.view.View
 import androidx.annotation.RequiresPermission
 import androidx.fragment.app.Fragment
+import com.example.sharedcamerasample.camera.CameraService
 import kotlinx.android.synthetic.main.fragment_shared_camera.*
 import java.io.File
 

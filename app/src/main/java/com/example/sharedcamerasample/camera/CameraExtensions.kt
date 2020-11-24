@@ -1,4 +1,4 @@
-package com.example.sharedcamerasample
+package com.example.sharedcamerasample.camera
 
 import android.graphics.Point
 import android.hardware.camera2.CameraCharacteristics

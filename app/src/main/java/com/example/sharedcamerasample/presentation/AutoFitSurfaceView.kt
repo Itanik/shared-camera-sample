@@ -1,4 +1,4 @@
-package com.example.sharedcamerasample
+package com.example.sharedcamerasample.presentation
 
 import android.content.Context
 import android.util.AttributeSet
