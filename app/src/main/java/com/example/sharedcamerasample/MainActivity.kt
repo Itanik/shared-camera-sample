@@ -27,7 +27,8 @@ class MainActivity : AppCompatActivity() {
                     Manifest.permission.WRITE_EXTERNAL_STORAGE
                 ), REQUEST_CODE
             )
-        }
+        } else
+            initFragment()
     }
 
     override fun onRequestPermissionsResult(
@@ -37,12 +38,14 @@ class MainActivity : AppCompatActivity() {
     ) {
         if (requestCode == REQUEST_CODE) {
             if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                inflateFragment()
+                initFragment()
             }
         }
     }
 
-    private fun inflateFragment() {
-
+    private fun initFragment() {
+        supportFragmentManager.beginTransaction()
+            .add(R.id.arContainer, SharedCameraFragment(R.layout.fragment_shared_camera))
+            .commit()
     }
 }
