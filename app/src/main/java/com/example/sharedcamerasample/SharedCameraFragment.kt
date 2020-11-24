@@ -11,13 +11,20 @@ import kotlinx.android.synthetic.main.fragment_shared_camera.*
 
 class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
     private lateinit var cameraService: CameraService
-
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val cameraManager =
             requireActivity().getSystemService(Context.CAMERA_SERVICE) as CameraManager
         cameraService = CameraService(cameraManager, cameraPreview)
+        onFragmentInitialized()
     }
+
+    var onFragmentInitialized: () -> Unit = {}
+    var onImageTaken
+        get() = cameraService.onImageTaken
+        set(value) {
+            cameraService.onImageTaken = value
+        }
 
     @RequiresPermission(Manifest.permission.CAMERA)
     override fun onResume() {
@@ -28,5 +35,9 @@ class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
     override fun onPause() {
         cameraService.closeCamera()
         super.onPause()
+    }
+
+    fun performTakePicture() {
+        cameraService.capture()
     }
 }

@@ -1,26 +1,40 @@
 package com.example.sharedcamerasample
 
-import android.Manifest
 import android.annotation.SuppressLint
+import android.graphics.ImageFormat
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
-import android.view.Surface
 import android.view.SurfaceHolder
-import androidx.annotation.RequiresPermission
 import timber.log.Timber
 
 
-class CameraService(private val cameraManager: CameraManager, private val cameraPreview: AutoFitSurfaceView) {
+class CameraService(
+    private val cameraManager: CameraManager,
+    private val cameraPreview: AutoFitSurfaceView
+) {
     private val cameraId: String = cameraManager.backCameraId
     private var cameraDevice: CameraDevice? = null
     private var backgroundHandler: Handler? = null
     private var backgroundThread: HandlerThread? = null
-    private var previewSurface: Surface? = null
-    private var captureSession: CameraCaptureSession? = null
+    private lateinit var captureSession: CameraCaptureSession
+    private val imageReader: ImageReader by lazy {
+        ImageReader.newInstance(
+            1080,
+            1920,
+            ImageFormat.JPEG,
+            1
+        ).apply {
+            setOnImageAvailableListener({ reader ->
+                onImageTaken(reader)
+            }, backgroundHandler)
+        }
+    }
+    var onImageTaken: (ImageReader) -> Unit = {}
 
     private val cameraStateCallback = object : CameraDevice.StateCallback() {
         override fun onOpened(camera: CameraDevice) {
@@ -39,21 +53,30 @@ class CameraService(private val cameraManager: CameraManager, private val camera
     }
 
     private fun createCameraPreviewSession() {
-        previewSurface = cameraPreview.holder.surface
+        val previewSurface = cameraPreview.holder.surface
         try {
-            val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+            val captureRequestBuilder =
+                cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
             captureRequestBuilder.addTarget(previewSurface!!)
-            cameraDevice!!.createCaptureSession(mutableListOf(previewSurface), object : CameraCaptureSession.StateCallback() {
-                override fun onConfigured(session: CameraCaptureSession) {
-                    captureSession = session
-                    captureSession!!.setRepeatingRequest(captureRequestBuilder.build(),null, backgroundHandler)
-                }
+            cameraDevice!!.createCaptureSession(
+                mutableListOf(previewSurface, imageReader.surface),
+                object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(session: CameraCaptureSession) {
+                        captureSession = session
+                        captureSession.setRepeatingRequest(
+                            captureRequestBuilder.build(),
+                            null,
+                            backgroundHandler
+                        )
+                    }
 
-                override fun onConfigureFailed(session: CameraCaptureSession) {
-                    Timber.e("createCameraPreviewSession, CameraCaptureSession.StateCallback - configure failed")
-                }
+                    override fun onConfigureFailed(session: CameraCaptureSession) {
+                        Timber.e("createCameraPreviewSession, CameraCaptureSession.StateCallback - configure failed")
+                    }
 
-            }, backgroundHandler)
+                },
+                backgroundHandler
+            )
         } catch (e: CameraAccessException) {
             Timber.e(e)
         }
@@ -61,7 +84,7 @@ class CameraService(private val cameraManager: CameraManager, private val camera
 
     fun isOpen(): Boolean = cameraDevice != null
 
-    @RequiresPermission(Manifest.permission.CAMERA)
+    @SuppressLint("MissingPermission")
     fun openCamera() {
         startBackgroundThread()
         try {
@@ -91,12 +114,34 @@ class CameraService(private val cameraManager: CameraManager, private val camera
             backgroundThread!!.join()
             backgroundThread = null
             backgroundHandler = null
+            cameraPreview.holder.addCallback(null)
         } catch (e: InterruptedException) {
             e.printStackTrace()
         }
     }
 
-    @RequiresPermission(Manifest.permission.CAMERA)
+    fun capture() {
+        if (cameraDevice == null) return
+        try {
+            val captureRequestBuilder =
+                cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+            captureRequestBuilder.addTarget(imageReader.surface)
+            captureSession.apply {
+                stopRepeating()
+                abortCaptures()
+                capture(
+                    captureRequestBuilder.build(),
+                    object : CameraCaptureSession.CaptureCallback() {
+
+                    },
+                    backgroundHandler
+                )
+            }
+        } catch (e: CameraAccessException) {
+            Timber.e(e)
+        }
+    }
+
     fun performOpenCamera() {
         cameraPreview.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
@@ -105,14 +150,18 @@ class CameraService(private val cameraManager: CameraManager, private val camera
                 holder: SurfaceHolder,
                 format: Int,
                 width: Int,
-                height: Int) = Unit
+                height: Int
+            ) = Unit
 
             @SuppressLint("MissingPermission")
             override fun surfaceCreated(holder: SurfaceHolder) {
 
                 // Selects appropriate preview size and configures view finder
                 val previewSize = getPreviewOutputSize(
-                    cameraPreview.display, cameraManager.getCameraCharacteristics(cameraId), SurfaceHolder::class.java)
+                    cameraPreview.display,
+                    cameraManager.getCameraCharacteristics(cameraId),
+                    SurfaceHolder::class.java
+                )
                 cameraPreview.setAspectRatio(previewSize.width, previewSize.height)
 
                 openCamera()

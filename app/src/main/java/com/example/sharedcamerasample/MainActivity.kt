@@ -3,11 +3,14 @@ package com.example.sharedcamerasample
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import kotlinx.android.synthetic.main.activity_main.*
 import timber.log.Timber
 
-
 class MainActivity : AppCompatActivity() {
+    private lateinit var arFragment: SharedCameraFragment
+
     companion object {
         private const val REQUEST_CODE = 1
     }
@@ -16,23 +19,20 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         Timber.plant(Timber.DebugTree())
-        checkPermissions()
-    }
-
-    private fun checkPermissions() {
-        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
-            ||
-            checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
-        ) {
+        if (hasPermissions())
+            initFragment()
+        else
             requestPermissions(
                 arrayOf(
                     Manifest.permission.CAMERA,
                     Manifest.permission.WRITE_EXTERNAL_STORAGE
                 ), REQUEST_CODE
             )
-        } else
-            initFragment()
     }
+
+    private fun hasPermissions(): Boolean =
+        (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
+                checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED)
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -47,8 +47,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initFragment() {
+        arFragment = SharedCameraFragment(R.layout.fragment_shared_camera)
         supportFragmentManager.beginTransaction()
-            .add(R.id.arContainer, SharedCameraFragment(R.layout.fragment_shared_camera))
+            .add(R.id.arContainer, arFragment)
             .commit()
+        arFragment.onFragmentInitialized = {
+            arFragment.onImageTaken = {
+                Toast.makeText(applicationContext, "Picture taken", Toast.LENGTH_SHORT).show()
+            }
+        }
+        buttonCapture.setOnClickListener {
+            arFragment.performTakePicture()
+        }
     }
 }
