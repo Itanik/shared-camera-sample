@@ -1,16 +1,20 @@
 package com.example.sharedcamerasample
 
 import android.Manifest
-import android.hardware.camera2.*
+import android.annotation.SuppressLint
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraManager
 import android.os.Handler
 import android.os.HandlerThread
 import android.view.Surface
-import android.view.TextureView
+import android.view.SurfaceHolder
 import androidx.annotation.RequiresPermission
 import timber.log.Timber
 
 
-class CameraService(private val cameraManager: CameraManager, private val textureView: TextureView) {
+class CameraService(private val cameraManager: CameraManager, private val cameraPreview: AutoFitSurfaceView) {
     private val cameraId: String = cameraManager.backCameraId
     private var cameraDevice: CameraDevice? = null
     private var backgroundHandler: Handler? = null
@@ -35,7 +39,7 @@ class CameraService(private val cameraManager: CameraManager, private val textur
     }
 
     private fun createCameraPreviewSession() {
-        previewSurface = Surface(textureView.surfaceTexture)
+        previewSurface = cameraPreview.holder.surface
         try {
             val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
             captureRequestBuilder.addTarget(previewSurface!!)
@@ -92,19 +96,27 @@ class CameraService(private val cameraManager: CameraManager, private val textur
         }
     }
 
-    private val CameraManager.backCameraId: String
-        get() {
-            var cameraId = ""
-            for (id in cameraIdList) {
-                if (
-                    getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING)
-                    == CameraCharacteristics.LENS_FACING_BACK
-                ) {
-                    cameraId = id
-                    break
-                }
+    @RequiresPermission(Manifest.permission.CAMERA)
+    fun performOpenCamera() {
+        cameraPreview.holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
+
+            override fun surfaceChanged(
+                holder: SurfaceHolder,
+                format: Int,
+                width: Int,
+                height: Int) = Unit
+
+            @SuppressLint("MissingPermission")
+            override fun surfaceCreated(holder: SurfaceHolder) {
+
+                // Selects appropriate preview size and configures view finder
+                val previewSize = getPreviewOutputSize(
+                    cameraPreview.display, cameraManager.getCameraCharacteristics(cameraId), SurfaceHolder::class.java)
+                cameraPreview.setAspectRatio(previewSize.width, previewSize.height)
+
+                openCamera()
             }
-            if (cameraId.isEmpty()) cameraId = cameraIdList[0]
-            return cameraId
-        }
+        })
+    }
 }
