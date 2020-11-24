@@ -4,6 +4,7 @@ import android.graphics.ImageFormat
 import android.graphics.Point
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.params.StreamConfigurationMap
 import android.util.Size
 import android.view.Display
 import kotlin.math.max
@@ -31,7 +32,7 @@ fun getDisplaySmartSize(display: Display): SmartSize {
  * https://d.android.com/reference/android/hardware/camera2/CameraDevice and
  * https://developer.android.com/reference/android/hardware/camera2/params/StreamConfigurationMap
  */
-fun <T> getPreviewOutputSize(
+fun <T>getPreviewOutputSize(
     display: Display,
     characteristics: CameraCharacteristics,
     targetClass: Class<T>,
@@ -45,8 +46,11 @@ fun <T> getPreviewOutputSize(
 
     // If image format is provided, use it to determine supported sizes; else use target class
     val config = characteristics.get(
-        CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP
-    )!!
+        CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!
+    if (format == null)
+        assert(StreamConfigurationMap.isOutputSupportedFor(targetClass))
+    else
+        assert(config.isOutputSupportedFor(format))
     val allSizes = if (format == null)
         config.getOutputSizes(targetClass) else config.getOutputSizes(format)
 

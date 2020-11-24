@@ -134,6 +134,7 @@ class CameraService(
     }
 
     fun capture(file: File) {
+        Timber.d( "cameraPreview size: ${cameraPreview.width} x ${cameraPreview.height}")
         if (cameraDevice == null) return
         imageFile = file
         try {
@@ -174,9 +175,9 @@ class CameraService(
                     cameraManager.getCameraCharacteristics(cameraId),
                     SurfaceHolder::class.java
                 )
-                Timber.d( "View finder size: ${cameraPreview.width} x ${cameraPreview.height}")
-                Timber.d( "Selected preview size: $previewSize")
-                cameraPreview.setAspectRatio(previewSize.width, previewSize.height)
+                Timber.d("cameraPreview size: ${cameraPreview.width} x ${cameraPreview.height}")
+                Timber.d("Selected preview size: ${previewSize.width} x ${previewSize.height}")
+                cameraPreview.setAspectRatio(cameraPreview.width, previewSize.height)
 
                 openCamera()
             }
