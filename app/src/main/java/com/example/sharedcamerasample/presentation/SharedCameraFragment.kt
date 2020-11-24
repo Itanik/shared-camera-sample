@@ -1,13 +1,12 @@
 package com.example.sharedcamerasample.presentation
 
-import android.Manifest
 import android.content.Context
 import android.hardware.camera2.CameraManager
 import android.os.Bundle
 import android.os.Environment
 import android.view.View
-import androidx.annotation.RequiresPermission
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import com.example.sharedcamerasample.camera.CameraService
 import kotlinx.android.synthetic.main.fragment_shared_camera.*
 import java.io.File
@@ -20,6 +19,7 @@ class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
             requireActivity().getSystemService(Context.CAMERA_SERVICE) as CameraManager
         cameraService = CameraService(cameraManager, cameraPreview)
         onFragmentInitialized()
+        cameraService.initCamera(view, lifecycleScope)
     }
 
     var onFragmentInitialized: () -> Unit = {}
@@ -28,17 +28,6 @@ class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
         set(value) {
             cameraService.onImageTaken = value
         }
-
-    @RequiresPermission(Manifest.permission.CAMERA)
-    override fun onResume() {
-        super.onResume()
-        cameraService.performOpenCamera()
-    }
-
-    override fun onPause() {
-        cameraService.closeCamera()
-        super.onPause()
-    }
 
     fun performTakePicture() {
         cameraService.capture(createFile())
@@ -49,5 +38,15 @@ class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
             requireContext().getExternalFilesDir(Environment.DIRECTORY_DCIM),
             "${System.currentTimeMillis()}.jpg"
         )
+    }
+
+    override fun onStop() {
+        super.onStop()
+        cameraService.closeCamera()
+    }
+
+    override fun onDestroy() {
+        cameraService.stopBackgroundThread()
+        super.onDestroy()
     }
 }
