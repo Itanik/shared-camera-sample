@@ -4,10 +4,12 @@ import android.Manifest
 import android.content.Context
 import android.hardware.camera2.CameraManager
 import android.os.Bundle
+import android.os.Environment
 import android.view.View
 import androidx.annotation.RequiresPermission
 import androidx.fragment.app.Fragment
 import kotlinx.android.synthetic.main.fragment_shared_camera.*
+import java.io.File
 
 class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
     private lateinit var cameraService: CameraService
@@ -38,6 +40,13 @@ class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
     }
 
     fun performTakePicture() {
-        cameraService.capture()
+        cameraService.capture(createFile())
+    }
+
+    private fun createFile(): File {
+        return File(
+            requireContext().getExternalFilesDir(Environment.DIRECTORY_DCIM),
+            "${System.currentTimeMillis()}.jpg"
+        )
     }
 }

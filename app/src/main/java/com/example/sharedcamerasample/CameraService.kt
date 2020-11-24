@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.view.SurfaceHolder
 import timber.log.Timber
+import java.io.File
 
 
 class CameraService(
@@ -30,11 +31,13 @@ class CameraService(
             1
         ).apply {
             setOnImageAvailableListener({ reader ->
-                onImageTaken(reader)
+                backgroundHandler?.post(ImageSaver(reader.acquireNextImage(), imageFile))
+                onImageTaken(imageFile)
             }, backgroundHandler)
         }
     }
-    var onImageTaken: (ImageReader) -> Unit = {}
+    var onImageTaken: (File) -> Unit = {}
+    private lateinit var imageFile: File
 
     private val cameraStateCallback = object : CameraDevice.StateCallback() {
         override fun onOpened(camera: CameraDevice) {
@@ -120,15 +123,14 @@ class CameraService(
         }
     }
 
-    fun capture() {
+    fun capture(file: File) {
         if (cameraDevice == null) return
+        imageFile = file
         try {
             val captureRequestBuilder =
                 cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
             captureRequestBuilder.addTarget(imageReader.surface)
             captureSession.apply {
-                stopRepeating()
-                abortCaptures()
                 capture(
                     captureRequestBuilder.build(),
                     object : CameraCaptureSession.CaptureCallback() {

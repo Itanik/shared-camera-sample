@@ -53,7 +53,7 @@ class MainActivity : AppCompatActivity() {
             .commit()
         arFragment.onFragmentInitialized = {
             arFragment.onImageTaken = {
-                Toast.makeText(applicationContext, "Picture taken", Toast.LENGTH_SHORT).show()
+                Toast.makeText(applicationContext, "Picture taken, file =$it", Toast.LENGTH_LONG).show()
             }
         }
         buttonCapture.setOnClickListener {
