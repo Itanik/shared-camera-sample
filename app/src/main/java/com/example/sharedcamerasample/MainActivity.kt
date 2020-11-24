@@ -11,6 +11,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val REQUEST_CODE = 1
     }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
