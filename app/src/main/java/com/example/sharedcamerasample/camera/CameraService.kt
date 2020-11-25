@@ -13,7 +13,10 @@ import android.util.Size
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.View
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleCoroutineScope
+import androidx.lifecycle.LifecycleObserver
+import androidx.lifecycle.OnLifecycleEvent
 import com.example.sharedcamerasample.rendering.BackgroundRenderer
 import com.google.ar.core.Config
 import com.google.ar.core.Frame
@@ -38,7 +41,7 @@ class CameraService(
     private val context: Context,
     private val cameraManager: CameraManager,
     private val cameraPreview: GLSurfaceView
-) : GLSurfaceView.Renderer {
+) : GLSurfaceView.Renderer, LifecycleObserver{
 
     companion object {
         // Maximum number of images that will be held in the reader's buffer
@@ -70,6 +73,11 @@ class CameraService(
             }, cameraHandler)
         }
     }
+
+    init {
+        start()
+    }
+
     private val characteristics: CameraCharacteristics by lazy {
         cameraManager.getCameraCharacteristics(cameraId)
     }
@@ -262,6 +270,7 @@ class CameraService(
         cameraPreview.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
     }
 
+    @OnLifecycleEvent(Lifecycle.Event.ON_RESUME)
     fun resume() {
         if (!this::arSession.isInitialized)
             arSession = Session(context)
@@ -273,6 +282,7 @@ class CameraService(
         cameraPreview.onResume()
     }
 
+    @OnLifecycleEvent(Lifecycle.Event.ON_PAUSE)
     fun pause() {
         cameraPreview.onPause()
         arSession.pause()
