@@ -5,6 +5,8 @@ import android.content.Context
 import android.graphics.ImageFormat
 import android.hardware.camera2.*
 import android.media.ImageReader
+import android.opengl.GLES20
+import android.opengl.GLSurfaceView
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Size
@@ -12,25 +14,31 @@ import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.View
 import androidx.lifecycle.LifecycleCoroutineScope
-import com.example.sharedcamerasample.presentation.AutoFitSurfaceView
+import com.example.sharedcamerasample.rendering.BackgroundRenderer
 import com.google.ar.core.Config
+import com.google.ar.core.Frame
 import com.google.ar.core.Session
 import com.google.ar.core.SharedCamera
+import com.google.ar.core.exceptions.CameraNotAvailableException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import timber.log.Timber
 import java.io.File
+import java.io.IOException
 import java.util.*
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 
 
 class CameraService(
+    private val context: Context,
     private val cameraManager: CameraManager,
-    private val cameraPreview: AutoFitSurfaceView
-) {
+    private val cameraPreview: GLSurfaceView
+) : GLSurfaceView.Renderer {
 
     companion object {
         // Maximum number of images that will be held in the reader's buffer
@@ -42,6 +50,7 @@ class CameraService(
     private lateinit var cameraDevice: CameraDevice
     private val cameraThread = HandlerThread("CameraThread").apply { start() }
     private val cameraHandler = Handler(cameraThread.looper)
+    private val backgroundRenderer = BackgroundRenderer()
     private lateinit var captureSession: CameraCaptureSession
     private lateinit var imageFile: File
     var onImageTaken: (File) -> Unit = {}
@@ -77,7 +86,8 @@ class CameraService(
         val targets = listOf(cameraPreview.holder.surface, imageReader.surface)
         captureSession = createCaptureSession(cameraDevice, targets, cameraHandler)
         val captureRequest = cameraDevice.createCaptureRequest(
-            CameraDevice.TEMPLATE_PREVIEW).apply { addTarget(cameraPreview.holder.surface) }
+            CameraDevice.TEMPLATE_PREVIEW
+        ).apply { addTarget(cameraPreview.holder.surface) }
 
         // This will keep sending the capture request as frequently as possible until the
         // session is torn down or session.stopRepeating() is called
@@ -135,7 +145,7 @@ class CameraService(
                 )
                 Timber.d("cameraPreview size: ${cameraPreview.width} x ${cameraPreview.height}")
                 Timber.d("Selected preview size: ${previewSize.width} x ${previewSize.height}")
-                cameraPreview.setAspectRatio(cameraPreview.width, previewSize.height)
+//                cameraPreview.setAspectRatio(cameraPreview.width, previewSize.height)
 
                 view.post {
                     lifecycleScope.launch(Dispatchers.Main) {
@@ -207,4 +217,64 @@ class CameraService(
             newConfig.focusMode = Config.FocusMode.AUTO
             configure(newConfig)
         }
+
+    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+        GLES20.glClearColor(0.1f, 0.1f, 0.1f, 1.0f)
+
+        try {
+            backgroundRenderer.createOnGlThread(context)
+        } catch (e: IOException) {
+            Timber.e(e, "Failed to read an asset file")
+        }
+    }
+
+    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+        GLES20.glViewport(0, 0, width, height)
+
+        val displayRotation: Int =
+            context.display!!.rotation
+        arSession.setDisplayGeometry(displayRotation, width, height)
+    }
+
+    override fun onDrawFrame(gl: GL10?) {
+
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+
+        if (!this::arSession.isInitialized) return
+
+        try {
+            arSession.setCameraTextureName(backgroundRenderer.textureId)
+
+            val frame: Frame = arSession.update()
+
+            backgroundRenderer.draw(frame)
+        } catch (e: Exception) {
+            Timber.e(e)
+        }
+    }
+
+    fun start() {
+        cameraPreview.preserveEGLContextOnPause = true
+        cameraPreview.setEGLContextClientVersion(2)
+        cameraPreview.setEGLConfigChooser(8, 8, 8, 8, 16, 0) // Alpha used for plane blending.
+
+        cameraPreview.setRenderer(this)
+        cameraPreview.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+    }
+
+    fun resume() {
+        if (!this::arSession.isInitialized)
+            arSession = Session(context)
+        try {
+            arSession.resume()
+        } catch (e: CameraNotAvailableException) {
+            return
+        }
+        cameraPreview.onResume()
+    }
+
+    fun pause() {
+        cameraPreview.onPause()
+        arSession.pause()
+    }
 }

@@ -17,9 +17,10 @@ class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
         super.onViewCreated(view, savedInstanceState)
         val cameraManager =
             requireActivity().getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        cameraService = CameraService(cameraManager, cameraPreview)
+        cameraService = CameraService(requireContext(),cameraManager, surfaceView)
+        cameraService.start()
         onFragmentInitialized()
-        cameraService.initCamera(requireContext(), view, lifecycleScope)
+//        cameraService.initCamera(requireContext(), view, lifecycleScope)
     }
 
     var onFragmentInitialized: () -> Unit = {}
@@ -29,8 +30,13 @@ class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
             cameraService.onImageTaken = value
         }
 
+    override fun onResume() {
+        super.onResume()
+        cameraService.resume()
+    }
+
     fun performTakePicture() {
-        cameraService.capture(createFile())
+//        cameraService.capture(createFile())
     }
 
     private fun createFile(): File {
@@ -40,13 +46,18 @@ class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
         )
     }
 
+    override fun onPause() {
+        super.onPause()
+        cameraService.pause()
+    }
+
     override fun onStop() {
         super.onStop()
-        cameraService.closeCamera()
+//        cameraService.closeCamera()
     }
 
     override fun onDestroy() {
-        cameraService.stopBackgroundThread()
+//        cameraService.stopBackgroundThread()
         super.onDestroy()
     }
 }
