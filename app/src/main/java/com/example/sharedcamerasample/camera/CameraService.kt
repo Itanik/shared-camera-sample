@@ -1,6 +1,7 @@
 package com.example.sharedcamerasample.camera
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.ImageFormat
 import android.hardware.camera2.*
 import android.media.ImageReader
@@ -12,11 +13,15 @@ import android.view.SurfaceHolder
 import android.view.View
 import androidx.lifecycle.LifecycleCoroutineScope
 import com.example.sharedcamerasample.presentation.AutoFitSurfaceView
+import com.google.ar.core.Config
+import com.google.ar.core.Session
+import com.google.ar.core.SharedCamera
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import timber.log.Timber
 import java.io.File
+import java.util.*
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
@@ -31,7 +36,9 @@ class CameraService(
         // Maximum number of images that will be held in the reader's buffer
         private const val IMAGE_BUFFER_SIZE: Int = 1
     }
-    private val cameraId: String = cameraManager.backCameraId
+    private lateinit var cameraId: String
+    private lateinit var sharedCamera: SharedCamera
+    private lateinit var arSession: Session
     private lateinit var cameraDevice: CameraDevice
     private val cameraThread = HandlerThread("CameraThread").apply { start() }
     private val cameraHandler = Handler(cameraThread.looper)
@@ -39,7 +46,7 @@ class CameraService(
     private lateinit var imageFile: File
     var onImageTaken: (File) -> Unit = {}
     private val imageReader: ImageReader by lazy {
-        val size = characteristics.getTargetSize(Size(1920,1080))
+        val size = characteristics.getTargetSize(Size(1920, 1080))
         Timber.d("imageReader final size = $size")
 
         ImageReader.newInstance(
@@ -58,8 +65,14 @@ class CameraService(
         cameraManager.getCameraCharacteristics(cameraId)
     }
 
+    private fun initializeSharedCamera(context: Context) {
+        arSession = createArSession(context)
+        sharedCamera = arSession.sharedCamera
+        cameraId = arSession.cameraConfig.cameraId
+    }
+
     @SuppressLint("MissingPermission")
-    private suspend fun initializeCamera() {
+    private suspend fun initializeCamera(context: Context) {
         cameraDevice = openCamera(cameraManager, cameraId, cameraHandler)
         val targets = listOf(cameraPreview.holder.surface, imageReader.surface)
         captureSession = createCaptureSession(cameraDevice, targets, cameraHandler)
@@ -75,7 +88,7 @@ class CameraService(
         try {
             cameraDevice.close()
         } catch (exc: Throwable) {
-            Timber.e( exc,"Error closing camera")
+            Timber.e(exc, "Error closing camera")
         }
     }
 
@@ -101,7 +114,7 @@ class CameraService(
         }
     }
 
-    fun initCamera(view: View, lifecycleScope: LifecycleCoroutineScope) {
+    fun initCamera(context: Context, view: View, lifecycleScope: LifecycleCoroutineScope) {
         cameraPreview.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
 
@@ -126,7 +139,7 @@ class CameraService(
 
                 view.post {
                     lifecycleScope.launch(Dispatchers.Main) {
-                        initializeCamera()
+                        initializeSharedCamera(context)
                     }
                 }
             }
@@ -148,7 +161,7 @@ class CameraService(
             }
 
             override fun onError(device: CameraDevice, error: Int) {
-                val msg = when(error) {
+                val msg = when (error) {
                     ERROR_CAMERA_DEVICE -> "Fatal (device)"
                     ERROR_CAMERA_DISABLED -> "Device policy"
                     ERROR_CAMERA_IN_USE -> "Camera in use"
@@ -176,7 +189,7 @@ class CameraService(
 
         // Create a capture session using the predefined targets; this also involves defining the
         // session state callback to be notified of when the session is ready
-        device.createCaptureSession(targets, object: CameraCaptureSession.StateCallback() {
+        device.createCaptureSession(targets, object : CameraCaptureSession.StateCallback() {
 
             override fun onConfigured(session: CameraCaptureSession) = cont.resume(session)
 
@@ -187,4 +200,11 @@ class CameraService(
             }
         }, handler)
     }
+
+    private fun createArSession(context: Context): Session =
+        Session(context, EnumSet.of(Session.Feature.SHARED_CAMERA)).apply {
+            val newConfig: Config = config
+            newConfig.focusMode = Config.FocusMode.AUTO
+            configure(newConfig)
+        }
 }

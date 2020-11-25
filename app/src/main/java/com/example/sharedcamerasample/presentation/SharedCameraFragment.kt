@@ -19,7 +19,7 @@ class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
             requireActivity().getSystemService(Context.CAMERA_SERVICE) as CameraManager
         cameraService = CameraService(cameraManager, cameraPreview)
         onFragmentInitialized()
-        cameraService.initCamera(view, lifecycleScope)
+        cameraService.initCamera(requireContext(), view, lifecycleScope)
     }
 
     var onFragmentInitialized: () -> Unit = {}
