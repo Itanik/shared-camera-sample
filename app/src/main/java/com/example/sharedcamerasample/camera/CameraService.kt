@@ -41,12 +41,13 @@ class CameraService(
     private val context: Context,
     private val cameraManager: CameraManager,
     private val cameraPreview: GLSurfaceView
-) : GLSurfaceView.Renderer, LifecycleObserver{
+) : GLSurfaceView.Renderer, LifecycleObserver {
 
     companion object {
         // Maximum number of images that will be held in the reader's buffer
         private const val IMAGE_BUFFER_SIZE: Int = 1
     }
+
     private lateinit var cameraId: String
     private lateinit var sharedCamera: SharedCamera
     private lateinit var arSession: Session
@@ -57,6 +58,7 @@ class CameraService(
     private lateinit var captureSession: CameraCaptureSession
     private lateinit var imageFile: File
     var onImageTaken: (File) -> Unit = {}
+    private lateinit var cpuImageReader: ImageReader
     private val imageReader: ImageReader by lazy {
         val size = characteristics.getTargetSize(Size(1920, 1080))
         Timber.d("imageReader final size = $size")
@@ -74,25 +76,81 @@ class CameraService(
         }
     }
 
-    init {
-        start()
-    }
-
     private val characteristics: CameraCharacteristics by lazy {
         cameraManager.getCameraCharacteristics(cameraId)
     }
 
-    private fun initializeSharedCamera(context: Context) {
+    private suspend fun initializeSharedCamera(context: Context) {
         arSession = createArSession(context)
         sharedCamera = arSession.sharedCamera
         cameraId = arSession.cameraConfig.cameraId
+        cpuImageReader = createImageReader(arSession)
+        sharedCamera.setAppSurfaces(cameraId, arrayListOf(cpuImageReader.surface))
+        cameraDevice = openCamera(cameraManager, cameraId, sharedCamera, cameraHandler)
+        arSession.setCameraTextureName(backgroundRenderer.textureId)
+
+        val captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+        val surfaces: List<Surface> =
+            sharedCamera.arCoreSurfaces.apply { add(cpuImageReader.surface) }
+        surfaces.forEach { surface ->
+            captureRequestBuilder.addTarget(surface)
+        }
+        captureSession = createCaptureSession(cameraDevice, sharedCamera, surfaces, cameraHandler) {
+
+        }
+        captureSession.setRepeatingRequest(
+            captureRequestBuilder.build(),
+            object : CameraCaptureSession.CaptureCallback() {
+                override fun onCaptureStarted(
+                    session: CameraCaptureSession,
+                    request: CaptureRequest,
+                    timestamp: Long,
+                    frameNumber: Long
+                ) {
+                    Timber.d("CaptureCallback: onCaptureStarted - timestamp = $timestamp, frameNumber = $frameNumber")
+                }
+
+                override fun onCaptureCompleted(
+                    session: CameraCaptureSession,
+                    request: CaptureRequest,
+                    result: TotalCaptureResult
+                ) {
+                    Timber.d("CaptureCallback: onCaptureCompleted")
+                }
+
+                override fun onCaptureFailed(
+                    session: CameraCaptureSession,
+                    request: CaptureRequest,
+                    failure: CaptureFailure
+                ) {
+                    Timber.e("onCaptureFailed: ${failure.frameNumber} ${failure.reason}")
+                }
+            },
+            cameraHandler
+        )
+    }
+
+    private fun createImageReader(session: Session): ImageReader {
+        val size = session.cameraConfig.imageSize
+        val reader = ImageReader.newInstance(
+            size.width,
+            size.height,
+            ImageFormat.JPEG,
+            IMAGE_BUFFER_SIZE
+        )
+        reader.setOnImageAvailableListener({ reader ->
+            Timber.d("image taken")
+//            cameraHandler.post(ImageSaver(reader.acquireNextImage(), imageFile))
+//            onImageTaken(imageFile)
+        }, cameraHandler)
+        return reader
     }
 
     @SuppressLint("MissingPermission")
     private suspend fun initializeCamera(context: Context) {
-        cameraDevice = openCamera(cameraManager, cameraId, cameraHandler)
+//        cameraDevice = openCamera(cameraManager, cameraId, cameraHandler)
         val targets = listOf(cameraPreview.holder.surface, imageReader.surface)
-        captureSession = createCaptureSession(cameraDevice, targets, cameraHandler)
+//        captureSession = createCaptureSession(cameraDevice, targets, cameraHandler)
         val captureRequest = cameraDevice.createCaptureRequest(
             CameraDevice.TEMPLATE_PREVIEW
         ).apply { addTarget(cameraPreview.holder.surface) }
@@ -157,7 +215,7 @@ class CameraService(
 
                 view.post {
                     lifecycleScope.launch(Dispatchers.Main) {
-                        initializeSharedCamera(context)
+//                        initializeSharedCamera(context)
                     }
                 }
             }
@@ -169,9 +227,11 @@ class CameraService(
     private suspend fun openCamera(
         manager: CameraManager,
         cameraId: String,
+        sharedCamera: SharedCamera,
         handler: Handler? = null
     ): CameraDevice = suspendCancellableCoroutine { cont ->
-        manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+        val wrappedCallback = sharedCamera.createARDeviceStateCallback(object :
+            CameraDevice.StateCallback() {
             override fun onOpened(device: CameraDevice) = cont.resume(device)
 
             override fun onDisconnected(device: CameraDevice) {
@@ -192,6 +252,7 @@ class CameraService(
                 if (cont.isActive) cont.resumeWithException(exc)
             }
         }, handler)
+        manager.openCamera(cameraId, wrappedCallback, handler)
     }
 
 
@@ -201,15 +262,26 @@ class CameraService(
      */
     private suspend fun createCaptureSession(
         device: CameraDevice,
+        sharedCamera: SharedCamera,
         targets: List<Surface>,
-        handler: Handler? = null
+        handler: Handler? = null,
+        onActive: () -> Unit
     ): CameraCaptureSession = suspendCoroutine { cont ->
-
-        // Create a capture session using the predefined targets; this also involves defining the
-        // session state callback to be notified of when the session is ready
-        device.createCaptureSession(targets, object : CameraCaptureSession.StateCallback() {
+        val wrappedCallback = sharedCamera.createARSessionStateCallback(object :
+            CameraCaptureSession.StateCallback() {
 
             override fun onConfigured(session: CameraCaptureSession) = cont.resume(session)
+
+            override fun onActive(session: CameraCaptureSession) {
+                Timber.d("CameraCaptureSession.StateCallback: onActive. resuming arsession and camerapreview")
+                arSession.resume()
+                cameraPreview.onResume()
+//                sharedCamera.setCaptureCallback(
+//                    object : CameraCaptureSession.CaptureCallback() {},
+//                    cameraHandler
+//                )
+                onActive()
+            }
 
             override fun onConfigureFailed(session: CameraCaptureSession) {
                 val exc = RuntimeException("Camera ${device.id} session configuration failed")
@@ -217,6 +289,10 @@ class CameraService(
                 cont.resumeWithException(exc)
             }
         }, handler)
+
+        // Create a capture session using the predefined targets; this also involves defining the
+        // session state callback to be notified of when the session is ready
+        device.createCaptureSession(targets, wrappedCallback, handler)
     }
 
     private fun createArSession(context: Context): Session =
@@ -227,7 +303,9 @@ class CameraService(
         }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        GLES20.glClearColor(0.1f, 0.1f, 0.1f, 1.0f)
+        // Set GL clear color to black.
+        GLES20.glClearColor(0f, 0f, 0f, 1.0f)
+        Timber.e("onSurfaceCreated")
 
         try {
             backgroundRenderer.createOnGlThread(context)
@@ -238,6 +316,7 @@ class CameraService(
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES20.glViewport(0, 0, width, height)
+        Timber.e("onSurfaceChanged")
 
         val displayRotation: Int =
             context.display!!.rotation
@@ -245,41 +324,41 @@ class CameraService(
     }
 
     override fun onDrawFrame(gl: GL10?) {
-
+        Timber.e("onDrawFrame")
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
 
         if (!this::arSession.isInitialized) return
 
         try {
-            arSession.setCameraTextureName(backgroundRenderer.textureId)
 
             val frame: Frame = arSession.update()
-
+            Timber.d("onDrawFrame: frame = ${frame.androidCameraTimestamp}")
             backgroundRenderer.draw(frame)
         } catch (e: Exception) {
             Timber.e(e)
         }
     }
 
-    fun start() {
+    suspend fun initPreviewRendering() {
         cameraPreview.preserveEGLContextOnPause = true
         cameraPreview.setEGLContextClientVersion(2)
         cameraPreview.setEGLConfigChooser(8, 8, 8, 8, 16, 0) // Alpha used for plane blending.
 
         cameraPreview.setRenderer(this)
         cameraPreview.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        initializeSharedCamera(context)
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_RESUME)
     fun resume() {
-        if (!this::arSession.isInitialized)
-            arSession = Session(context)
-        try {
-            arSession.resume()
-        } catch (e: CameraNotAvailableException) {
-            return
-        }
-        cameraPreview.onResume()
+//        if (!this::arSession.isInitialized) return
+//        try {
+//            arSession.resume()
+//        } catch (e: CameraNotAvailableException) {
+//            Timber.e(e)
+//            return
+//        }
+//            cameraPreview.onResume()
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_PAUSE)
