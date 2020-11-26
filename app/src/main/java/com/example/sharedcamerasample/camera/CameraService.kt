@@ -22,7 +22,6 @@ import com.google.ar.core.Config
 import com.google.ar.core.Frame
 import com.google.ar.core.Session
 import com.google.ar.core.SharedCamera
-import com.google.ar.core.exceptions.CameraNotAvailableException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -30,6 +29,7 @@ import timber.log.Timber
 import java.io.File
 import java.io.IOException
 import java.util.*
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import kotlin.coroutines.resume
@@ -59,6 +59,7 @@ class CameraService(
     private lateinit var imageFile: File
     var onImageTaken: (File) -> Unit = {}
     private lateinit var cpuImageReader: ImageReader
+    private val shouldUpdateSurfaceView = AtomicBoolean(false)
     private val imageReader: ImageReader by lazy {
         val size = characteristics.getTargetSize(Size(1920, 1080))
         Timber.d("imageReader final size = $size")
@@ -85,13 +86,13 @@ class CameraService(
         sharedCamera = arSession.sharedCamera
         cameraId = arSession.cameraConfig.cameraId
         cpuImageReader = createImageReader(arSession)
-        sharedCamera.setAppSurfaces(cameraId, arrayListOf(cpuImageReader.surface))
+//        sharedCamera.setAppSurfaces(cameraId, arrayListOf(cpuImageReader.surface))
         cameraDevice = openCamera(cameraManager, cameraId, sharedCamera, cameraHandler)
         arSession.setCameraTextureName(backgroundRenderer.textureId)
 
         val captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
-        val surfaces: List<Surface> =
-            sharedCamera.arCoreSurfaces.apply { add(cpuImageReader.surface) }
+        val surfaces: List<Surface> = sharedCamera.arCoreSurfaces
+//                .apply { add(cpuImageReader.surface) }
         surfaces.forEach { surface ->
             captureRequestBuilder.addTarget(surface)
         }
@@ -101,20 +102,13 @@ class CameraService(
         captureSession.setRepeatingRequest(
             captureRequestBuilder.build(),
             object : CameraCaptureSession.CaptureCallback() {
-                override fun onCaptureStarted(
-                    session: CameraCaptureSession,
-                    request: CaptureRequest,
-                    timestamp: Long,
-                    frameNumber: Long
-                ) {
-                    Timber.d("CaptureCallback: onCaptureStarted - timestamp = $timestamp, frameNumber = $frameNumber")
-                }
 
                 override fun onCaptureCompleted(
                     session: CameraCaptureSession,
                     request: CaptureRequest,
                     result: TotalCaptureResult
                 ) {
+                    shouldUpdateSurfaceView.set(true)
                     Timber.d("CaptureCallback: onCaptureCompleted")
                 }
 
@@ -139,33 +133,12 @@ class CameraService(
             IMAGE_BUFFER_SIZE
         )
         reader.setOnImageAvailableListener({ reader ->
-            Timber.d("image taken")
+            Timber.d("image taken width=${reader.width}")
+            reader.width
 //            cameraHandler.post(ImageSaver(reader.acquireNextImage(), imageFile))
 //            onImageTaken(imageFile)
         }, cameraHandler)
         return reader
-    }
-
-    @SuppressLint("MissingPermission")
-    private suspend fun initializeCamera(context: Context) {
-//        cameraDevice = openCamera(cameraManager, cameraId, cameraHandler)
-        val targets = listOf(cameraPreview.holder.surface, imageReader.surface)
-//        captureSession = createCaptureSession(cameraDevice, targets, cameraHandler)
-        val captureRequest = cameraDevice.createCaptureRequest(
-            CameraDevice.TEMPLATE_PREVIEW
-        ).apply { addTarget(cameraPreview.holder.surface) }
-
-        // This will keep sending the capture request as frequently as possible until the
-        // session is torn down or session.stopRepeating() is called
-        captureSession.setRepeatingRequest(captureRequest.build(), null, cameraHandler)
-    }
-
-    fun closeCamera() {
-        try {
-            cameraDevice.close()
-        } catch (exc: Throwable) {
-            Timber.e(exc, "Error closing camera")
-        }
     }
 
     fun stopBackgroundThread() {
@@ -188,38 +161,6 @@ class CameraService(
         } catch (e: CameraAccessException) {
             Timber.e(e)
         }
-    }
-
-    fun initCamera(context: Context, view: View, lifecycleScope: LifecycleCoroutineScope) {
-        cameraPreview.holder.addCallback(object : SurfaceHolder.Callback {
-            override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
-
-            override fun surfaceChanged(
-                holder: SurfaceHolder,
-                format: Int,
-                width: Int,
-                height: Int
-            ) = Unit
-
-            @SuppressLint("MissingPermission")
-            override fun surfaceCreated(holder: SurfaceHolder) {
-                // Selects appropriate preview size and configures view finder
-                val previewSize = getPreviewOutputSize(
-                    cameraPreview.display,
-                    cameraManager.getCameraCharacteristics(cameraId),
-                    SurfaceHolder::class.java
-                )
-                Timber.d("cameraPreview size: ${cameraPreview.width} x ${cameraPreview.height}")
-                Timber.d("Selected preview size: ${previewSize.width} x ${previewSize.height}")
-//                cameraPreview.setAspectRatio(cameraPreview.width, previewSize.height)
-
-                view.post {
-                    lifecycleScope.launch(Dispatchers.Main) {
-//                        initializeSharedCamera(context)
-                    }
-                }
-            }
-        })
     }
 
     /** Opens the camera and returns the opened device (as the result of the suspend coroutine) */
@@ -276,10 +217,10 @@ class CameraService(
                 Timber.d("CameraCaptureSession.StateCallback: onActive. resuming arsession and camerapreview")
                 arSession.resume()
                 cameraPreview.onResume()
-//                sharedCamera.setCaptureCallback(
-//                    object : CameraCaptureSession.CaptureCallback() {},
-//                    cameraHandler
-//                )
+                sharedCamera.setCaptureCallback(
+                    object : CameraCaptureSession.CaptureCallback() {},
+                    cameraHandler
+                )
                 onActive()
             }
 
@@ -289,9 +230,6 @@ class CameraService(
                 cont.resumeWithException(exc)
             }
         }, handler)
-
-        // Create a capture session using the predefined targets; this also involves defining the
-        // session state callback to be notified of when the session is ready
         device.createCaptureSession(targets, wrappedCallback, handler)
     }
 
@@ -305,7 +243,7 @@ class CameraService(
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         // Set GL clear color to black.
         GLES20.glClearColor(0f, 0f, 0f, 1.0f)
-        Timber.e("onSurfaceCreated")
+        Timber.d("onSurfaceCreated")
 
         try {
             backgroundRenderer.createOnGlThread(context)
@@ -316,18 +254,17 @@ class CameraService(
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES20.glViewport(0, 0, width, height)
-        Timber.e("onSurfaceChanged")
+        Timber.d("onSurfaceChanged")
 
+//        if (!this::arSession.isInitialized) return
         val displayRotation: Int =
             context.display!!.rotation
         arSession.setDisplayGeometry(displayRotation, width, height)
     }
 
     override fun onDrawFrame(gl: GL10?) {
-        Timber.e("onDrawFrame")
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
-
-        if (!this::arSession.isInitialized) return
+        if (!shouldUpdateSurfaceView.get()) return
 
         try {
 
@@ -339,14 +276,16 @@ class CameraService(
         }
     }
 
-    suspend fun initPreviewRendering() {
+    fun initPreviewRendering(lifecycleScope: LifecycleCoroutineScope) {
         cameraPreview.preserveEGLContextOnPause = true
         cameraPreview.setEGLContextClientVersion(2)
         cameraPreview.setEGLConfigChooser(8, 8, 8, 8, 16, 0) // Alpha used for plane blending.
 
         cameraPreview.setRenderer(this)
         cameraPreview.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-        initializeSharedCamera(context)
+            lifecycleScope.launch(Dispatchers.Main) {
+                initializeSharedCamera(context)
+        }
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_RESUME)
@@ -363,7 +302,9 @@ class CameraService(
 
     @OnLifecycleEvent(Lifecycle.Event.ON_PAUSE)
     fun pause() {
+        shouldUpdateSurfaceView.set(false)
         cameraPreview.onPause()
-        arSession.pause()
+        if (this::arSession.isInitialized)
+            arSession.pause()
     }
 }

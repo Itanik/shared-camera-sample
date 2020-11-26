@@ -9,8 +9,6 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.example.sharedcamerasample.camera.CameraService
 import kotlinx.android.synthetic.main.fragment_shared_camera.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import java.io.File
 
 class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
@@ -21,11 +19,7 @@ class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
             requireActivity().getSystemService(Context.CAMERA_SERVICE) as CameraManager
         cameraService = CameraService(requireContext(),cameraManager, surfaceView)
         lifecycle.addObserver(cameraService)
-        view.post{
-            lifecycleScope.launch(Dispatchers.Main) {
-                cameraService.initPreviewRendering()
-            }
-        }
+        cameraService.initPreviewRendering(lifecycleScope)
 //        cameraService.start()
         onFragmentInitialized()
 //        cameraService.initCamera(requireContext(), view, lifecycleScope)
