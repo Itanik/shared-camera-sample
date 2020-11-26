@@ -20,9 +20,7 @@ class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
         cameraService = CameraService(requireContext(),cameraManager, surfaceView)
         lifecycle.addObserver(cameraService)
         cameraService.initPreviewRendering(lifecycleScope)
-//        cameraService.start()
         onFragmentInitialized()
-//        cameraService.initCamera(requireContext(), view, lifecycleScope)
     }
 
     var onFragmentInitialized: () -> Unit = {}
@@ -33,7 +31,7 @@ class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
         }
 
     fun performTakePicture() {
-//        cameraService.capture(createFile())
+        cameraService.capture(createFile())
     }
 
     private fun createFile(): File {

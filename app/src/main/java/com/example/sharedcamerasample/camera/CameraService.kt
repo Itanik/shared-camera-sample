@@ -2,6 +2,7 @@ package com.example.sharedcamerasample.camera
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.ImageFormat
 import android.hardware.camera2.*
 import android.media.ImageReader
@@ -10,9 +11,8 @@ import android.opengl.GLSurfaceView
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Size
+import android.view.PixelCopy
 import android.view.Surface
-import android.view.SurfaceHolder
-import android.view.View
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.lifecycle.LifecycleObserver
@@ -23,10 +23,13 @@ import com.google.ar.core.Frame
 import com.google.ar.core.Session
 import com.google.ar.core.SharedCamera
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import timber.log.Timber
+import java.io.BufferedOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
@@ -56,26 +59,10 @@ class CameraService(
     private val cameraHandler = Handler(cameraThread.looper)
     private val backgroundRenderer = BackgroundRenderer()
     private lateinit var captureSession: CameraCaptureSession
-    private lateinit var imageFile: File
     var onImageTaken: (File) -> Unit = {}
     private lateinit var cpuImageReader: ImageReader
+    private var bufferReader: ImageReader?= null
     private val shouldUpdateSurfaceView = AtomicBoolean(false)
-    private val imageReader: ImageReader by lazy {
-        val size = characteristics.getTargetSize(Size(1920, 1080))
-        Timber.d("imageReader final size = $size")
-
-        ImageReader.newInstance(
-            size.width,
-            size.height,
-            ImageFormat.JPEG,
-            IMAGE_BUFFER_SIZE
-        ).apply {
-            setOnImageAvailableListener({ reader ->
-                cameraHandler.post(ImageSaver(reader.acquireNextImage(), imageFile))
-                onImageTaken(imageFile)
-            }, cameraHandler)
-        }
-    }
 
     private val characteristics: CameraCharacteristics by lazy {
         cameraManager.getCameraCharacteristics(cameraId)
@@ -92,7 +79,7 @@ class CameraService(
 
         val captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
         val surfaces: List<Surface> = sharedCamera.arCoreSurfaces
-//                .apply { add(cpuImageReader.surface) }
+                .apply { add(cpuImageReader.surface) }
         surfaces.forEach { surface ->
             captureRequestBuilder.addTarget(surface)
         }
@@ -133,35 +120,40 @@ class CameraService(
             IMAGE_BUFFER_SIZE
         )
         reader.setOnImageAvailableListener({ reader ->
-            Timber.d("image taken width=${reader.width}")
-            reader.width
+            Timber.d("GOvno")
+            bufferReader = reader
 //            cameraHandler.post(ImageSaver(reader.acquireNextImage(), imageFile))
 //            onImageTaken(imageFile)
         }, cameraHandler)
         return reader
     }
 
-    fun stopBackgroundThread() {
-        cameraThread.quitSafely()
+    fun capture(file: File) {
+        val surface = sharedCamera.arCoreSurfaces[0]
+        surfaceToFile(surface,file)
+//        if (bufferReader != null) {
+//            cameraHandler.post(ImageSaver(bufferReader!!.acquireLatestImage(), imageFile))
+//            onImageTaken(imageFile)
+//        }
     }
 
-    fun capture(file: File) {
-        imageFile = file
-        try {
-            val captureRequestBuilder =
-                cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
-            captureRequestBuilder.addTarget(imageReader.surface)
-            captureSession.capture(
-                captureRequestBuilder.build(),
-                object : CameraCaptureSession.CaptureCallback() {
-
-                },
-                cameraHandler
-            )
-        } catch (e: CameraAccessException) {
-            Timber.e(e)
+    private fun surfaceToFile(surface: Surface, file: File){
+        GlobalScope.launch(Dispatchers.IO) {
+            val surfaceBitmap = Bitmap.createBitmap(1080, 1920, Bitmap.Config.ARGB_8888);
+            val listener = PixelCopy.OnPixelCopyFinishedListener {
+                if (it == 0) {
+                    val os = BufferedOutputStream(FileOutputStream(file))
+                    surfaceBitmap.compress(Bitmap.CompressFormat.JPEG, 80, os)
+                    os.close()
+                    onImageTaken(file)
+                } else {
+                    Timber.e("Cannot save surface? code = $it")
+                }
+            }
+            PixelCopy.request(surface, surfaceBitmap, listener, cameraHandler)
         }
     }
+
 
     /** Opens the camera and returns the opened device (as the result of the suspend coroutine) */
     @SuppressLint("MissingPermission")
@@ -269,7 +261,7 @@ class CameraService(
         try {
 
             val frame: Frame = arSession.update()
-            Timber.d("onDrawFrame: frame = ${frame.androidCameraTimestamp}")
+//            Timber.d("onDrawFrame: frame = ${frame.androidCameraTimestamp}")
             backgroundRenderer.draw(frame)
         } catch (e: Exception) {
             Timber.e(e)
@@ -306,5 +298,10 @@ class CameraService(
         cameraPreview.onPause()
         if (this::arSession.isInitialized)
             arSession.pause()
+    }
+
+    @OnLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+    fun onDestroy() {
+        cameraThread.quitSafely()
     }
 }
