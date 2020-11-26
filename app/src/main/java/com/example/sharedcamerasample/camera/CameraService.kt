@@ -18,10 +18,7 @@ import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.lifecycle.LifecycleObserver
 import androidx.lifecycle.OnLifecycleEvent
 import com.example.sharedcamerasample.rendering.BackgroundRenderer
-import com.google.ar.core.Config
-import com.google.ar.core.Frame
-import com.google.ar.core.Session
-import com.google.ar.core.SharedCamera
+import com.google.ar.core.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -60,26 +57,47 @@ class CameraService(
     private val backgroundRenderer = BackgroundRenderer()
     private lateinit var captureSession: CameraCaptureSession
     var onImageTaken: (File) -> Unit = {}
-    private lateinit var cpuImageReader: ImageReader
+    private lateinit var imageReader: ImageReader
     private var bufferReader: ImageReader?= null
     private val shouldUpdateSurfaceView = AtomicBoolean(false)
+    private lateinit var imageFile: File
+    private lateinit var gpuTextureSize: Size
 
     private val characteristics: CameraCharacteristics by lazy {
         cameraManager.getCameraCharacteristics(cameraId)
     }
 
+    fun captureCam2(file: File) {
+        imageFile = file
+        try {
+            val captureRequestBuilder =
+                cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+            captureRequestBuilder.addTarget(imageReader.surface)
+            captureSession.capture(
+                captureRequestBuilder.build(),
+                object : CameraCaptureSession.CaptureCallback() {
+
+                },
+                cameraHandler
+            )
+        } catch (e: CameraAccessException) {
+            Timber.e(e)
+        }
+    }
+
     private suspend fun initializeSharedCamera(context: Context) {
         arSession = createArSession(context)
         sharedCamera = arSession.sharedCamera
+        gpuTextureSize = arSession.getSupportedCameraConfigs(CameraConfigFilter(arSession))[0]!!.textureSize
         cameraId = arSession.cameraConfig.cameraId
-        cpuImageReader = createImageReader(arSession)
+        imageReader = createImageReader(arSession)
 //        sharedCamera.setAppSurfaces(cameraId, arrayListOf(cpuImageReader.surface))
         cameraDevice = openCamera(cameraManager, cameraId, sharedCamera, cameraHandler)
         arSession.setCameraTextureName(backgroundRenderer.textureId)
 
         val captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
         val surfaces: List<Surface> = sharedCamera.arCoreSurfaces
-                .apply { add(cpuImageReader.surface) }
+//                .apply { add(cpuImageReader.surface) }
         surfaces.forEach { surface ->
             captureRequestBuilder.addTarget(surface)
         }
@@ -112,7 +130,7 @@ class CameraService(
     }
 
     private fun createImageReader(session: Session): ImageReader {
-        val size = session.cameraConfig.imageSize
+        val size = session.cameraConfig.textureSize
         val reader = ImageReader.newInstance(
             size.width,
             size.height,
@@ -139,11 +157,11 @@ class CameraService(
 
     private fun surfaceToFile(surface: Surface, file: File){
         GlobalScope.launch(Dispatchers.IO) {
-            val surfaceBitmap = Bitmap.createBitmap(1080, 1920, Bitmap.Config.ARGB_8888);
+            val surfaceBitmap = Bitmap.createBitmap(gpuTextureSize.height, gpuTextureSize.width, Bitmap.Config.ARGB_8888);
             val listener = PixelCopy.OnPixelCopyFinishedListener {
                 if (it == 0) {
                     val os = BufferedOutputStream(FileOutputStream(file))
-                    surfaceBitmap.compress(Bitmap.CompressFormat.JPEG, 80, os)
+                    surfaceBitmap.compress(Bitmap.CompressFormat.JPEG, 100, os)
                     os.close()
                     onImageTaken(file)
                 } else {
