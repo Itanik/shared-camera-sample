@@ -17,7 +17,7 @@ class SharedCameraFragment(contentLayoutId: Int) : Fragment(contentLayoutId) {
         super.onViewCreated(view, savedInstanceState)
         val cameraManager =
             requireActivity().getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        cameraService = CameraService(requireContext(),cameraManager, surfaceView)
+        cameraService = CameraService(requireContext(),cameraManager, arSurfaceView)
         lifecycle.addObserver(cameraService)
         cameraService.initPreviewRendering(lifecycleScope)
         onFragmentInitialized()

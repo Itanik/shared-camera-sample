@@ -5,7 +5,8 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.example.sharedcamerasample.presentation.SharedCameraFragment
+import androidx.fragment.app.Fragment
+import com.example.sharedcamerasample.presentation.BaseArFragment
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.ArCoreApk.Availability
 import com.google.ar.core.ArCoreApk.InstallStatus
@@ -14,7 +15,7 @@ import kotlinx.android.synthetic.main.activity_main.*
 import timber.log.Timber
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var arFragment: SharedCameraFragment
+    private lateinit var arFragment: Fragment
 
     companion object {
         private const val REQUEST_CODE = 1
@@ -55,18 +56,20 @@ class MainActivity : AppCompatActivity() {
         if (!isARCoreSupportedAndUpToDate()) return
         else
             Toast.makeText(applicationContext, "AR available", Toast.LENGTH_LONG).show()
-        arFragment = SharedCameraFragment(R.layout.fragment_shared_camera)
+//        arFragment = SharedCameraFragment(R.layout.fragment_shared_camera)
+        arFragment = BaseArFragment()
         supportFragmentManager.beginTransaction()
             .add(R.id.arContainer, arFragment)
             .commit()
-        arFragment.onFragmentInitialized = {
-            arFragment.onImageTaken = {
-                Toast.makeText(applicationContext, "Picture taken, file =$it", Toast.LENGTH_LONG)
-                    .show()
-            }
-        }
+//        arFragment.onFragmentInitialized = {
+//            arFragment.onImageTaken = {
+//                Toast.makeText(applicationContext, "Picture taken, file =$it", Toast.LENGTH_LONG)
+//                    .show()
+//            }
+//        }
         buttonCapture.setOnClickListener {
-            arFragment.performTakePicture()
+//            arFragment.performTakePicture()
+            (arFragment as BaseArFragment).takePicture()
         }
     }
 
